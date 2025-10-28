@@ -21,16 +21,16 @@ type StreamProvider struct {
 }
 
 func NewStreamProvider(rawURL string) (*StreamProvider, error) {
-	// Разбираем URL
 	uri, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	// streamID из URL
 	streamID := getIDFromURL(rawURL)
+	if streamID == 0 {
+		return nil, fmt.Errorf("failed to extract stream ID from URL")
+	}
 
-	// streamCategory — первый сегмент пути
 	pathParts := strings.Split(strings.Trim(uri.Path, "/"), "/")
 	streamCategory := ""
 	if len(pathParts) > 0 {
@@ -52,13 +52,19 @@ func NewStreamProvider(rawURL string) (*StreamProvider, error) {
 
 func getIDFromURL(u string) int {
 	parts := strings.Split(u, "/")
+	if len(parts) == 0 {
+		return 0
+	}
 	last := parts[len(parts)-1]
 	subParts := strings.SplitN(last, "-", 2)
+	if len(subParts) == 0 {
+		return 0
+	}
 	id, _ := strconv.Atoi(subParts[0])
 	return id
 }
 
-func (sp *StreamProvider) request(method, reqURL string, headers []string, data url.Values) ([]byte, error) {
+func (sp *StreamProvider) request(method, reqURL string, headers map[string]string, data url.Values) ([]byte, error) {
 	var body io.Reader
 	if data != nil {
 		body = strings.NewReader(data.Encode())
@@ -66,32 +72,34 @@ func (sp *StreamProvider) request(method, reqURL string, headers []string, data 
 
 	req, err := http.NewRequest(method, reqURL, body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if data != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	for _, h := range headers {
-		parts := strings.SplitN(h, ":", 2)
-		if len(parts) == 2 {
-			req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
-		}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 
 	resp, err := sp.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
 	return io.ReadAll(resp.Body)
 }
 
 func (sp *StreamProvider) sendRequest() (map[string]interface{}, error) {
-	headers := []string{
-		"x-requested-with: XMLHttpRequest",
-		"Cookie: FILMIXNET=ah3mgjr8vgfe84u86vcvu5gcp9",
+	headers := map[string]string{
+		"x-requested-with": "XMLHttpRequest",
+		"Cookie":           "FILMIXNET=ah3mgjr8vgfe84u86vcvu5gcp9",
 	}
 	data := url.Values{
 		"post_id":  {strconv.Itoa(sp.streamID)},
@@ -105,7 +113,7 @@ func (sp *StreamProvider) sendRequest() (map[string]interface{}, error) {
 
 	var resp map[string]interface{}
 	if err := json.Unmarshal(respBytes, &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 	return resp, nil
 }
@@ -117,52 +125,104 @@ func (sp *StreamProvider) GetStreamData() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	if response["type"] == "success" {
-		message := response["message"].(map[string]interface{})
-		videos := message["translations"].(map[string]interface{})["video"].(map[string]interface{})
+	responseType, ok := response["type"].(string)
+	if !ok || responseType != "success" {
+		return result, nil
+	}
 
-		for translation, rawVideo := range videos {
-			video := rawVideo.(string)
-			if sp.streamCategory == "film" {
-				decoded := sp.decode(video)
-				parts := strings.Split(decoded, ",")
-				result[translation] = sp.convertFromString(parts)
-			} else {
-				// сериал
-				resp, err := sp.request("GET", sp.decode(video), nil, nil)
-				if err != nil {
-					return nil, err
-				}
+	message, ok := response["message"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid message format")
+	}
 
-				var series []map[string]interface{}
-				if err := json.Unmarshal(resp, &series); err != nil {
-					return nil, err
-				}
+	translations, ok := message["translations"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid translations format")
+	}
 
-				for _, serie := range series {
-					title := strings.TrimSpace(serie["title"].(string))
-					folders := serie["folder"].([]interface{})
-					for _, f := range folders {
-						folder := f.(map[string]interface{})
-						id := fmt.Sprintf("%v", folder["id"])
-						fileStr := folder["file"].(string)
-						files := strings.Split(fileStr, ",")
+	videos, ok := translations["video"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid video format")
+	}
 
-						if result[translation] == nil {
-							result[translation] = make(map[string]map[string]map[string]interface{})
-						}
-						tran := result[translation].(map[string]map[string]map[string]interface{})
-						if tran[title] == nil {
-							tran[title] = make(map[string]map[string]interface{})
-						}
-						tran[title][id] = map[string]interface{}{
-							"title":   strings.TrimSpace(folder["title"].(string)),
-							"quality": sp.convertFromString(files),
-						}
-					}
-				}
+	for translation, rawVideo := range videos {
+		video, ok := rawVideo.(string)
+		if !ok {
+			continue
+		}
+
+		if sp.streamCategory == "film" {
+			decoded := sp.decode(video)
+			parts := strings.Split(decoded, ",")
+			result[translation] = sp.convertFromString(parts)
+		} else {
+			seriesData, err := sp.processSeriesData(video)
+			if err != nil {
+				fmt.Printf("Warning: failed to process series data for %s: %v\n", translation, err)
+				continue
+			}
+			result[translation] = seriesData
+		}
+	}
+
+	return result, nil
+}
+
+func (sp *StreamProvider) processSeriesData(video string) (map[string]interface{}, error) {
+	decodedURL := sp.decode(video)
+	resp, err := sp.request("GET", decodedURL, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var series []map[string]interface{}
+	if err := json.Unmarshal(resp, &series); err != nil {
+		return nil, fmt.Errorf("failed to parse series data: %w", err)
+	}
+
+	result := make(map[string]interface{})
+
+	for _, serie := range series {
+		title, ok := serie["title"].(string)
+		if !ok {
+			continue
+		}
+		title = strings.TrimSpace(title)
+
+		folders, ok := serie["folder"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		seasonMap := make(map[string]interface{})
+
+		for _, f := range folders {
+			folder, ok := f.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			id := fmt.Sprintf("%v", folder["id"])
+
+			folderTitle, ok := folder["title"].(string)
+			if !ok {
+				continue
+			}
+
+			fileStr, ok := folder["file"].(string)
+			if !ok {
+				continue
+			}
+
+			files := strings.Split(fileStr, ",")
+
+			seasonMap[id] = map[string]interface{}{
+				"title":   strings.TrimSpace(folderTitle),
+				"quality": sp.convertFromString(files),
 			}
 		}
+
+		result[title] = seasonMap
 	}
 
 	return result, nil
@@ -187,6 +247,10 @@ func (sp *StreamProvider) IsMovie() bool {
 }
 
 func (sp *StreamProvider) decode(str string) string {
+	if len(str) < 2 {
+		return str
+	}
+
 	tokens := []string{
 		":<:bzl3UHQwaWk0MkdXZVM3TDdB",
 		":<:SURhQnQwOEM5V2Y3bFlyMGVI",
@@ -198,16 +262,16 @@ func (sp *StreamProvider) decode(str string) string {
 	clean := str[2:]
 	clean = strings.ReplaceAll(clean, `\/`, "/")
 
-	for {
+	for strings.Contains(clean, ":<:") {
 		for _, t := range tokens {
 			clean = strings.ReplaceAll(clean, t, "")
 		}
-		if !strings.Contains(clean, ":<:") {
-			break
-		}
 	}
 
-	decoded, _ := base64.StdEncoding.DecodeString(clean)
+	decoded, err := base64.StdEncoding.DecodeString(clean)
+	if err != nil {
+		return ""
+	}
 	return string(decoded)
 }
 
@@ -223,5 +287,6 @@ func main() {
 	}
 
 	jsonBytes, _ := json.MarshalIndent(data, "", "  ")
+	fmt.Println("Film data:")
 	fmt.Println(string(jsonBytes))
 }
