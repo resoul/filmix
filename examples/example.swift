@@ -64,7 +64,8 @@ class StreamProvider {
     private func sendRequest(completion: @escaping (Result<[String: Any], Error>) -> Void) {
         let headers = [
             "x-requested-with": "XMLHttpRequest",
-            "Cookie": "FILMIXNET=ah3mgjr8vgfe84u86vcvu5gcp9"
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            "Cookie": "x-a-key=sinatra; minotaurs=Nc8nG7bBrVA8ZZJyv7HRBW7o60nfJJIU3APoONx5ZGY=; FILMIXNET=1102velpvd123qtrkgvimd4r2j; ishimura=43e0ed9000bff3d0f98e9afbe2f695add9843337"
         ]
         let body = [
             "post_id": String(streamID),
