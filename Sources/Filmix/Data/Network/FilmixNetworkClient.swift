@@ -24,36 +24,43 @@ public final class FilmixNetworkClient {
 
     // MARK: - Generic Requests
 
-    public func get(url: String, completion: @escaping (Result<Data, Error>) -> Void) {
-        session.request(url, method: .get).responseData { response in
-            completion(response.result.mapError { $0 as Error })
+    public func get(url: String) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            session.request(url, method: .get).responseData { response in
+                continuation.resume(with: response.result.mapError { $0 as Error })
+            }
         }
     }
 
-    public func getString(url: String, completion: @escaping (Result<String, Error>) -> Void) {
-        session.request(url, method: .get).responseString { response in
-            completion(response.result.mapError { $0 as Error })
+    public func getString(url: String) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            session.request(url, method: .get).responseString { response in
+                continuation.resume(with: response.result.mapError { $0 as Error })
+            }
         }
     }
 
     public func post(url: String,
-              parameters: Parameters,
-              headers: HTTPHeaders,
-              completion: @escaping (Result<Data, Error>) -> Void) {
-        session.request(url, method: .post, parameters: parameters, headers: headers)
-            .responseData { response in
-                completion(response.result.mapError { $0 as Error })
-            }
+                     parameters: Parameters,
+                     headers: HTTPHeaders) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            session.request(url, method: .post, parameters: parameters, headers: headers)
+                .responseData { response in
+                    continuation.resume(with: response.result.mapError { $0 as Error })
+                }
+        }
     }
 
     public func postDecodable<T: Decodable>(url: String,
-                                     parameters: Parameters,
-                                     headers: HTTPHeaders,
-                                     completion: @escaping (Result<T, Error>) -> Void) {
-        session.request(url, method: .post, parameters: parameters, headers: headers)
-            .responseDecodable(of: T.self) { response in
-                completion(response.result.mapError { $0 as Error })
-            }
+                                            parameters: Parameters,
+                                            headers: HTTPHeaders,
+                                            as type: T.Type = T.self) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            session.request(url, method: .post, parameters: parameters, headers: headers)
+                .responseDecodable(of: type) { response in
+                    continuation.resume(with: response.result.mapError { $0 as Error })
+                }
+        }
     }
 
     // MARK: - Cookie Helpers
@@ -67,7 +74,7 @@ public final class FilmixNetworkClient {
         if !header.contains("alora="),
            let baseURL = URL(string: baseURL),
            let minotaurs = HTTPCookieStorage.shared.cookies(for: baseURL)?
-               .first(where: { $0.name == "minotaurs" }) {
+            .first(where: { $0.name == "minotaurs" }) {
             let sep = header.isEmpty ? "" : "; "
             header += "\(sep)alora=\(minotaurs.value)"
         }

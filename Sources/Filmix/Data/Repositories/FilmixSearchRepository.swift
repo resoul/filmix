@@ -21,30 +21,27 @@ public final class FilmixSearchRepository: SearchRepositoryProtocol {
 
     // MARK: - SearchRepositoryProtocol
 
-    public func search(query: String, completion: @escaping (Result<MoviePage, Error>) -> Void) {
+    public func search(query: String) async throws -> MoviePage {
         let url = "\(client.baseURL)/engine/ajax/sphinx_search.php"
         let params: Parameters = [
-            "scf":          "fx",
-            "story":        query,
+            "scf": "fx",
+            "story": query,
             "search_start": "0",
-            "do":           "search",
-            "subaction":    "search",
-            "years_ot":     "1902",
-            "years_do":     "2026",
-            "kpi_ot":       "1",
-            "kpi_do":       "10",
-            "imdb_ot":      "1",
-            "imdb_do":      "10",
-            "sort_name":    "",
-            "sort_date":    "",
-            "sort_favorite":"",
-            "simple":       "1"
+            "do": "search",
+            "subaction": "search",
+            "years_ot": "1902",
+            "years_do": "2026",
+            "kpi_ot": "1",
+            "kpi_do": "10",
+            "imdb_ot": "1",
+            "imdb_do": "10",
+            "sort_name": "",
+            "sort_date": "",
+            "sort_favorite": "",
+            "simple": "1"
         ]
 
-        client.post(url: url, parameters: params, headers: Self.searchHeaders) { result in
-            completion(result.flatMap { data in
-                Result { try FilmixHTMLParser.parseListing(html: FilmixHTMLParser.decodeData(data)) }
-            })
-        }
+        let data = try await client.post(url: url, parameters: params, headers: Self.searchHeaders)
+        return try FilmixHTMLParser.parseListing(html: FilmixHTMLParser.decodeData(data))
     }
 }
