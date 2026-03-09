@@ -9,8 +9,8 @@ public final class FetchMoviePageUseCase {
         self.repository = repository
     }
 
-    public func execute(url: URL? = nil, completion: @escaping (Result<MoviePage, Error>) -> Void) {
-        repository.fetchPage(url: url, completion: completion)
+    public func execute(url: URL? = nil) async throws -> MoviePage {
+        try await repository.fetchPage(url: url)
     }
 }
 
@@ -23,8 +23,8 @@ public final class FetchMovieDetailUseCase {
         self.repository = repository
     }
 
-    public func execute(path: String, completion: @escaping (Result<MovieDetail, Error>) -> Void) {
-        repository.fetchDetail(path: path, completion: completion)
+    public func execute(path: String) async throws -> MovieDetail {
+        try await repository.fetchDetail(path: path)
     }
 }
 
@@ -37,10 +37,8 @@ public final class FetchTranslationsUseCase {
         self.repository = repository
     }
 
-    public func execute(postId: Int,
-                 isSeries: Bool,
-                 completion: @escaping (Result<[Translation], Error>) -> Void) {
-        repository.fetchTranslations(postId: postId, isSeries: isSeries, completion: completion)
+    public func execute(postId: Int, isSeries: Bool) async throws -> [Translation] {
+        try await repository.fetchTranslations(postId: postId, isSeries: isSeries)
     }
 }
 
@@ -53,12 +51,11 @@ public final class SearchMoviesUseCase {
         self.repository = repository
     }
 
-    public func execute(query: String, completion: @escaping (Result<MoviePage, Error>) -> Void) {
+    public func execute(query: String) async throws -> MoviePage {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            completion(.success(MoviePage(movies: [], nextPageURL: nil)))
-            return
+            return MoviePage(movies: [], nextPageURL: nil)
         }
-        repository.search(query: trimmed, completion: completion)
+        return try await repository.search(query: trimmed)
     }
 }

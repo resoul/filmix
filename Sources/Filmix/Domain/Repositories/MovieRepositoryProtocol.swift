@@ -4,18 +4,17 @@ import Foundation
 
 public protocol MovieRepositoryProtocol {
     /// Fetch a paginated listing from a URL (nil = home page)
-    func fetchPage(url: URL?, completion: @escaping (Result<MoviePage, Error>) -> Void)
+    func fetchPage(url: URL?) async throws -> MoviePage
 
     /// Fetch full detail for a movie/series by path or full URL
-    func fetchDetail(path: String, completion: @escaping (Result<MovieDetail, Error>) -> Void)
+    func fetchDetail(path: String) async throws -> MovieDetail
 
     /// Fetch available player translations (streams or series seasons)
-    func fetchTranslations(postId: Int, isSeries: Bool,
-                           completion: @escaping (Result<[Translation], Error>) -> Void)
+    func fetchTranslations(postId: Int, isSeries: Bool) async throws -> [Translation]
 }
 
 // MARK: - SearchRepositoryProtocol
 
 public protocol SearchRepositoryProtocol {
-    func search(query: String, completion: @escaping (Result<MoviePage, Error>) -> Void)
+    func search(query: String) async throws -> MoviePage
 }

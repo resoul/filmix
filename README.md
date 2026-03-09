@@ -23,14 +23,14 @@ The project follows **Clean Architecture** and is split into two layers:
 ```
 Sources/Filmix/
 │
-├── Domain/                  # Business logic — no UIKit or networking dependencies
-│   ├── Entities/            # Movie, MovieDetail, Category, Genre, Translation…
+├── Domain/                  # Business logic - no UIKit or networking dependencies
+│   ├── Entities/            # Movie, MovieDetail, Category, Genre, Translation...
 │   ├── Repositories/        # Protocols: MovieRepositoryProtocol, SearchRepositoryProtocol
-│   └── UseCases/            # FetchMoviePageUseCase, FetchMovieDetailUseCase…
+│   └── UseCases/            # FetchMoviePageUseCase, FetchMovieDetailUseCase...
 │
-└── Data/                    # Implementations — networking, parsing, decoding
+└── Data/                    # Implementations - networking, parsing, decoding
     ├── Network/             # FilmixNetworkClient (Alamofire wrapper)
-    ├── Parsers/             # FilmixHTMLParser (SwiftSoup → Domain models)
+    ├── Parsers/             # FilmixHTMLParser (SwiftSoup -> Domain models)
     ├── Repositories/        # FilmixMovieRepository, FilmixSearchRepository
     ├── DTOs/                # Codable models for JSON API responses
     └── StreamDecoder.swift  # Obfuscated stream URL decoder
@@ -39,7 +39,7 @@ Sources/Filmix/
 ### Dependency Rule
 
 ```
-Presentation → Domain ← Data
+Presentation -> Domain <- Data
 ```
 
 - **Domain** has no knowledge of networking, UI, or storage
@@ -65,7 +65,7 @@ dependencies: [
 ]
 ```
 
-Or via Xcode: **File → Add Package Dependencies → Add Local...**
+Or via Xcode: **File -> Add Package Dependencies -> Add Local...**
 
 Then add `Filmix` to **Frameworks, Libraries and Embedded Content** for each target.
 
@@ -74,21 +74,20 @@ Then add `Filmix` to **Frameworks, Libraries and Embedded Content** for each tar
 ```swift
 import Filmix
 
-// Fetch movie listing
-let useCase = Filmix.shared.fetchMoviePage
-useCase.execute(url: nil) { result in
-    switch result {
-    case .success(let page):
+Task {
+    do {
+        // Fetch movie listing
+        let useCase = Filmix.shared.fetchMoviePage
+        let page = try await useCase.execute(url: nil)
         print(page.movies)
-    case .failure(let error):
+
+        // Search
+        let search = Filmix.shared.searchMovies
+        let results = try await search.execute(query: "Inception")
+        print(results.movies)
+    } catch {
         print(error)
     }
-}
-
-// Search
-let search = Filmix.shared.searchMovies
-search.execute(query: "Inception") { result in
-    // ...
 }
 ```
 
@@ -98,10 +97,17 @@ Repository protocols make it easy to inject mocks:
 
 ```swift
 final class MockMovieRepository: MovieRepositoryProtocol {
-    func fetchPage(url: URL?, completion: @escaping (Result<MoviePage, Error>) -> Void) {
-        completion(.success(MoviePage(movies: [], nextPageURL: nil)))
+    func fetchPage(url: URL?) async throws -> MoviePage {
+        MoviePage(movies: [], nextPageURL: nil)
     }
-    // ...
+
+    func fetchDetail(path: String) async throws -> MovieDetail {
+        throw MovieError.articleNotFound
+    }
+
+    func fetchTranslations(postId: Int, isSeries: Bool) async throws -> [Translation] {
+        []
+    }
 }
 
 let useCase = FetchMoviePageUseCase(repository: MockMovieRepository())
